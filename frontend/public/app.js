@@ -1,28 +1,21 @@
+// frontend/public/app.js
 
-
-// Use a relative base so frontend works both locally and when deployed
 const API_BASE = window.API_BASE || '/api/v1';
-
 let tierChart = null;
 let scoreChart = null;
 
-/* -------------------------
-   UI helpers
-   ------------------------- */
 function activateNavButton(sectionId) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById('btn-' + sectionId);
   if (btn) btn.classList.add('active');
 }
 
-/* showSection now async-safe */
 async function showSection(sectionId, evt) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.getElementById(sectionId).classList.add('active');
   activateNavButton(sectionId);
 
   if (sectionId === 'dashboard') {
-    // small delay to let layout settle
     setTimeout(() => {
       loadDashboard();
       setTimeout(() => {
@@ -37,9 +30,6 @@ async function showSection(sectionId, evt) {
   }
 }
 
-/* -------------------------
-   Dashboard: charts & stats
-   ------------------------- */
 async function loadDashboard() {
   const statsGrid = document.getElementById('statsGrid');
   if (!statsGrid) return;
@@ -47,55 +37,32 @@ async function loadDashboard() {
   try {
     const resp = await axios.get(`${API_BASE}/dashboard-stats`);
     const data = resp.data || {};
-
     const total_customers = data.portfolio?.total_customers ?? '—';
     const total_delinquent = data.portfolio?.total_delinquent ?? '—';
     const delinquency_rate = data.portfolio?.delinquency_rate ?? '—';
     const tier_breakdown = data.portfolio?.tier_breakdown || { HIGH: 0, MEDIUM: 0, LOW: 0 };
 
     const statsHTML = `
-      <div class="stat-card">
-        <h3>Total Customers</h3>
-        <div class="value">${total_customers}</div>
-      </div>
-      <div class="stat-card danger">
-        <h3>Delinquent Accounts</h3>
-        <div class="value">${total_delinquent}</div>
-        <div class="subtext">${delinquency_rate}% rate</div>
-      </div>
-      <div class="stat-card warning">
-        <h3>High Risk</h3>
-        <div class="value">${tier_breakdown.HIGH ?? 0}</div>
-      </div>
-      <div class="stat-card success">
-        <h3>Low Risk</h3>
-        <div class="value">${tier_breakdown.LOW ?? 0}</div>
-      </div>
+      <div class="stat-card"><h3>Total Customers</h3><div class="value">${total_customers}</div></div>
+      <div class="stat-card danger"><h3>Delinquent Accounts</h3><div class="value">${total_delinquent}</div><div class="subtext">${delinquency_rate}% rate</div></div>
+      <div class="stat-card warning"><h3>High Risk</h3><div class="value">${tier_breakdown.HIGH ?? 0}</div></div>
+      <div class="stat-card success"><h3>Low Risk</h3><div class="value">${tier_breakdown.LOW ?? 0}</div></div>
     `;
     statsGrid.innerHTML = statsHTML;
 
-    // draw tier chart
     const tierCtx = document.getElementById('tierChart')?.getContext('2d');
     if (tierCtx) {
       if (tierChart) tierChart.destroy();
       tierChart = new Chart(tierCtx, {
         type: 'doughnut',
         data: {
-          labels: ['High Risk', 'Medium Risk', 'Low Risk'],
-          datasets: [{
-            data: [
-              tier_breakdown.HIGH ?? 0,
-              tier_breakdown.MEDIUM ?? 0,
-              tier_breakdown.LOW ?? 0
-            ],
-            backgroundColor: ['#dc2626', '#f59e0b', '#16a34a']
-          }]
+          labels: ['High Risk','Medium Risk','Low Risk'],
+          datasets: [{ data: [tier_breakdown.HIGH ?? 0, tier_breakdown.MEDIUM ?? 0, tier_breakdown.LOW ?? 0], backgroundColor: ['#dc2626','#f59e0b','#16a34a'] }]
         },
-        options: { responsive: true, maintainAspectRatio: false }
+        options: { responsive:true, maintainAspectRatio:false }
       });
     }
 
-    // risk score distribution
     const distResp = await axios.get(`${API_BASE}/risk-distribution`);
     const scores = distResp.data?.risk_score_distribution || {};
     const labels = Object.keys(scores).sort();
@@ -105,25 +72,13 @@ async function loadDashboard() {
     if (scoreCtx) {
       if (scoreChart) scoreChart.destroy();
       scoreChart = new Chart(scoreCtx, {
-        type: 'bar',
-        data: {
-          labels,
-          datasets: [{
-            label: 'Customers',
-            data: values,
-            backgroundColor: '#2563eb'
-          }]
-        },
-        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+        type:'bar',
+        data: { labels, datasets:[{ label:'Customers', data:values, backgroundColor:'#2563eb' }] },
+        options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } }
       });
     }
 
-    // ensure charts resize properly after rendering
-    setTimeout(() => {
-      try { if (tierChart) tierChart.resize(); } catch(e) {}
-      try { if (scoreChart) scoreChart.resize(); } catch(e) {}
-    }, 120);
-
+    setTimeout(() => { try{ if (tierChart) tierChart.resize(); } catch(e){} try{ if (scoreChart) scoreChart.resize(); } catch(e){} }, 120);
   } catch (err) {
     console.error('Dashboard error:', err);
     const msg = err?.response?.data?.detail || err?.message || 'Network Error';
@@ -131,9 +86,6 @@ async function loadDashboard() {
   }
 }
 
-/* -------------------------
-   Customers list
-   ------------------------- */
 async function loadCustomers() {
   const container = document.getElementById('customersTable');
   if (!container) return;
@@ -150,15 +102,14 @@ async function loadCustomers() {
           ${customers.map(c => `
             <tr>
               <td>${c.customer_id ?? c.customerId ?? '-'}</td>
-              <td><span class="risk-tier-badge ${c.risk_tier ?? '-' }">${c.risk_tier ?? '-'}</span></td>
+              <td><span class="risk-tier-badge ${c.risk_tier ?? '-'}">${c.risk_tier ?? '-'}</span></td>
               <td>${c.risk_score ?? '-'}</td>
               <td>${(c.utilization ?? c['Utilisation %'] ?? '-')}%</td>
               <td>${(c.payment_ratio ?? c['Avg Payment Ratio'] ?? '-')}%</td>
               <td>${c.is_delinquent ? '⚠️ Delinquent' : '✅ Current'}</td>
             </tr>`).join('')}
         </tbody>
-      </table>
-    `;
+      </table>`;
     container.innerHTML = html;
   } catch (err) {
     console.error('Customers error:', err);
@@ -167,12 +118,9 @@ async function loadCustomers() {
   }
 }
 
-/* -------------------------
-   Scoring tool
-   ------------------------- */
 function loadScoringTool() {
   const form = `
-    <div style="display: grid; gap: 15px;">
+    <div style="display:grid; gap:15px;">
       <div><label>Customer ID</label><input type="text" id="cust_id" placeholder="e.g., C001"></div>
       <div><label>Utilisation %</label><input type="number" id="utilisation" min="0" max="100"></div>
       <div><label>Avg Payment Ratio %</label><input type="number" id="payment_ratio" min="0" max="100"></div>
@@ -180,17 +128,13 @@ function loadScoringTool() {
       <div><label>Merchant Mix Index (0-1)</label><input type="number" id="merchant_mix" min="0" max="1" step="0.1"></div>
       <div><label>Cash Withdrawal %</label><input type="number" id="cash_withdrawal" min="0" max="100"></div>
       <div><label>Recent Spend Change %</label><input type="number" id="spend_change" min="-100" max="100"></div>
-    </div>
-  `;
-  const el = document.getElementById('scoringForm');
-  if (el) el.innerHTML = form;
+    </div>`;
+  const el = document.getElementById('scoringForm'); if (el) el.innerHTML = form;
 }
 
 async function scoreCustomer() {
-  const resultEl = document.getElementById('scoringResult');
-  if (!resultEl) return;
+  const resultEl = document.getElementById('scoringResult'); if (!resultEl) return;
   resultEl.innerHTML = '<div class="loading">Calculating...</div>';
-
   try {
     const utilisation = parseFloat(document.getElementById('utilisation')?.value || 0);
     const payment_ratio = parseFloat(document.getElementById('payment_ratio')?.value || 0);
@@ -218,39 +162,32 @@ async function scoreCustomer() {
     const result = resp.data || {};
 
     const html = `
-      <div style="margin-top: 30px; padding: 20px; background: var(--light); border-radius: 10px;">
+      <div style="margin-top:30px;padding:20px;background:var(--light);border-radius:10px;">
         <h3>Assessment Results</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;">
-          <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
-            <div style="color: #6b7280; font-size: 12px;">RISK TIER</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:15px;margin:20px 0;">
+          <div style="background:white;padding:15px;border-radius:5px;text-align:center;">
+            <div style="color:#6b7280;font-size:12px;">RISK TIER</div>
             <span class="risk-tier-badge ${result.risk_tier ?? '-'}">${result.risk_tier ?? '-'}</span>
           </div>
-          <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
-            <div style="color: #6b7280; font-size: 12px;">RISK SCORE</div>
-            <div style="font-size: 24px; font-weight: bold;">${result.risk_score ?? '-'}</div>
+          <div style="background:white;padding:15px;border-radius:5px;text-align:center;">
+            <div style="color:#6b7280;font-size:12px;">RISK SCORE</div>
+            <div style="font-size:24px;font-weight:bold;">${result.risk_score ?? '-'}</div>
           </div>
-          <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
-            <div style="color: #6b7280; font-size: 12px;">DELINQUENCY PROB</div>
-            <div style="font-size: 24px; font-weight: bold; color: var(--danger);">${((result.delinquency_probability || 0) * 100).toFixed(1)}%</div>
+          <div style="background:white;padding:15px;border-radius:5px;text-align:center;">
+            <div style="color:#6b7280;font-size:12px;">DELINQUENCY PROB</div>
+            <div style="font-size:24px;font-weight:bold;color:var(--danger);">${((result.delinquency_probability || 0)*100).toFixed(1)}%</div>
           </div>
         </div>
-
-        ${result.triggered_signals && result.triggered_signals.length ? `
-          <div style="background: #fee2e2; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+        ${(result.triggered_signals && result.triggered_signals.length) ? `
+          <div style="background:#fee2e2;padding:15px;border-radius:5px;margin-bottom:20px;">
             <strong>Triggered Signals:</strong>
-            <ul style="margin-left: 20px; margin-top: 10px;">
+            <ul style="margin-left:20px;margin-top:10px;">
               ${result.triggered_signals.map(s => `<li>${s}</li>`).join('')}
             </ul>
           </div>` : ''}
-
-        <div class="recommendation">
-          <strong>Recommended Actions:</strong>
-          <ul>${(result.recommendations || []).map(r => `<li>${r}</li>`).join('')}</ul>
-        </div>
-      </div>
-    `;
+        <div class="recommendation"><strong>Recommended Actions:</strong><ul>${(result.recommendations || []).map(r => `<li>${r}</li>`).join('')}</ul></div>
+      </div>`;
     resultEl.innerHTML = html;
-
   } catch (err) {
     console.error('Scoring error:', err);
     const msg = err?.response?.data?.detail || err?.message || 'Network Error';
@@ -258,39 +195,22 @@ async function scoreCustomer() {
   }
 }
 
-/* -------------------------
-   Startup behavior
-   ------------------------- */
+// startup
 window.addEventListener('load', () => {
-  // prepare scoring form immediately
-  try { loadScoringTool(); } catch (e) { console.warn(e); }
-
-  // Load dashboard after a brief delay so layout/CSS settle
+  try { loadScoringTool(); } catch(e) {}
   setTimeout(() => {
-    // Workaround: trigger customers tab then return to dashboard so charts get rendered correctly
-    // If your app is fast you can shorten timings; otherwise increase.
     try {
-      // switch to customers (will load customers)
       showSection('customers', { target: document.getElementById('btn-customers') });
-
-      // after customers loaded, go back to dashboard and render charts
       setTimeout(() => {
         showSection('dashboard', { target: document.getElementById('btn-dashboard') });
-
-        // final resize to ensure Chart.js measures correct sizes
-        setTimeout(() => {
-          try { if (tierChart) tierChart.resize(); } catch(e) {}
-          try { if (scoreChart) scoreChart.resize(); } catch(e) {}
-        }, 180);
-      }, 420); // adjust if necessary (longer on slow hosts)
+        setTimeout(() => { try { if (tierChart) tierChart.resize(); } catch(e){} try { if (scoreChart) scoreChart.resize(); } catch(e){} }, 180);
+      }, 420);
     } catch (e) {
-      // fallback: directly load dashboard if anything fails
       console.warn('Auto tab flip failed, loading dashboard directly', e);
       loadDashboard();
     }
   }, 180);
 
-  // Ensure charts resize on window resize
   window.addEventListener('resize', () => {
     try { if (tierChart) tierChart.resize(); } catch(e) {}
     try { if (scoreChart) scoreChart.resize(); } catch(e) {}
