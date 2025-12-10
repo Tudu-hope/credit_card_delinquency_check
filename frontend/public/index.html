@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Early Risk Signals Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Early Risk Signals Dashboard</h1>
+            <p><h3>Credit Card Delinquency Watch </h3></p>
+            <nav>
+                <button class="nav-btn active" onclick="showSection('dashboard')">📊 Dashboard</button>
+                <button class="nav-btn" onclick="showSection('customers')">👥 Customers</button>
+                <button class="nav-btn" onclick="showSection('tools')">🔧 Scoring Tool</button>
+            </nav>
+        </header>
+
+        <!-- Dashboard Section -->
+        <div id="dashboard" class="section active">
+            <div class="stats-grid" id="statsGrid"></div>
+            <div class="chart-container">
+                <h2>Risk Tier Distribution</h2>
+                <div class="chart-wrapper">
+                    <canvas id="tierChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container">
+                <h2>Risk Score Distribution</h2>
+                <div class="chart-wrapper">
+                    <canvas id="scoreChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customers Section -->
+        <div id="customers" class="section">
+            <div class="search-box">
+                <input type="text" id="customerSearch" placeholder="Search by customer ID...">
+                <select id="tierFilter">
+                    <option value="">All Tiers</option>
+                    <option value="HIGH">High Risk</option>
+                    <option value="MEDIUM">Medium Risk</option>
+                    <option value="LOW">Low Risk</option>
+                </select>
+                <button onclick="loadCustomers()">Search</button>
+            </div>
+            <div id="customersTable"></div>
+        </div>
+
+        <!-- Scoring Tool Section -->
+        <div id="tools" class="section">
+            <div class="chart-container">
+                <h2>Customer Risk Assessment Tool</h2>
+                <div id="scoringForm" style="display: grid; gap: 15px;"></div>
+                <button onclick="scoreCustomer()" style="margin-top: 20px; padding: 12px 30px; background: var(--primary); color: white; border: none; border-radius: 5px; font-weight: 600; cursor: pointer; font-size: 16px;">
+                    Calculate Risk Score
+                </button>
+                <div id="scoringResult"></div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Early Risk Signals System v1.0 | Last Updated: <span id="timestamp"></span></p>
+        </footer>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api/v1';
+        let tierChart, scoreChart;
+
+        function showSection(sectionId) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(sectionId).classList.add('active');
+            event.target.classList.add('active');
+
+            if (sectionId === 'dashboard') loadDashboard();
+            else if (sectionId === 'customers') loadCustomers();
+            else if (sectionId === 'tools') loadScoringTool();
+        }
+
+        async function loadDashboard() {
+            try {
+                const response = await axios.get(`${API_BASE}/dashboard-stats`);
+                const data = response.data;
+                
+                const statsHTML = `
+                    <div class="stat-card">
+                        <h3>Total Customers</h3>
+                        <div class="value">${data.portfolio.total_customers}</div>
+                    </div>
+                    <div class="stat-card danger">
+                        <h3>Delinquent Accounts</h3>
+                        <div class="value">${data.portfolio.total_delinquent}</div>
+                        <div class="subtext">${data.portfolio.delinquency_rate}% rate</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <h3>High Risk</h3>
+                        <div class="value">${data.portfolio.tier_breakdown.HIGH}</div>
+                    </div>
+                    <div class="stat-card success">
+                        <h3>Low Risk</h3>
+                        <div class="value">${data.portfolio.tier_breakdown.LOW}</div>
+                    </div>
+                `;
+                document.getElementById('statsGrid').innerHTML = statsHTML;
+
+                const tierCtx = document.getElementById('tierChart').getContext('2d');
+                if (tierChart) tierChart.destroy();
+                tierChart = new Chart(tierCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['High Risk', 'Medium Risk', 'Low Risk'],
+                        datasets: [{
+                            data: [data.portfolio.tier_breakdown.HIGH, data.portfolio.tier_breakdown.MEDIUM, data.portfolio.tier_breakdown.LOW],
+                            backgroundColor: ['#dc2626', '#f59e0b', '#16a34a']
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+
+                const distributionResp = await axios.get(`${API_BASE}/risk-distribution`);
+                const scores = distributionResp.data.risk_score_distribution;
+                
+                const scoreCtx = document.getElementById('scoreChart').getContext('2d');
+                if (scoreChart) scoreChart.destroy();
+                scoreChart = new Chart(scoreCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(scores).sort(),
+                        datasets: [{
+                            label: 'Customers',
+                            data: Object.keys(scores).sort().map(k => scores[k]),
+                            backgroundColor: '#2563eb'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+                });
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        async function loadCustomers() {
+            try {
+                const tier = document.getElementById('tierFilter')?.value || '';
+                const response = await axios.get(`${API_BASE}/customers`, { params: { tier, limit: 50 } });
+                
+                const html = `
+                    <table>
+                        <thead><tr><th>Customer ID</th><th>Risk Tier</th><th>Risk Score</th><th>Utilization</th><th>Payment Ratio</th><th>Status</th></tr></thead>
+                        <tbody>${response.data.map(c => `<tr><td>${c.customer_id}</td><td><span class="risk-tier-badge ${c.risk_tier}">${c.risk_tier}</span></td><td>${c.risk_score}</td><td>${c.utilization}%</td><td>${c.payment_ratio}%</td><td>${c.is_delinquent ? '⚠️ Delinquent' : '✅ Current'}</td></tr>`).join('')}</tbody>
+                    </table>
+                `;
+                document.getElementById('customersTable').innerHTML = html;
+            } catch (error) {
+                document.getElementById('customersTable').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        function loadScoringTool() {
+            const form = `
+                <div style="display: grid; gap: 15px;">
+                    <div><label>Customer ID</label><input type="text" id="cust_id" placeholder="e.g., C001"></div>
+                    <div><label>Utilisation %</label><input type="number" id="utilisation" min="0" max="100"></div>
+                    <div><label>Avg Payment Ratio %</label><input type="number" id="payment_ratio" min="0" max="100"></div>
+                    <div><label>Min Due Paid Frequency %</label><input type="number" id="due_freq" min="0" max="100"></div>
+                    <div><label>Merchant Mix Index (0-1)</label><input type="number" id="merchant_mix" min="0" max="1" step="0.1"></div>
+                    <div><label>Cash Withdrawal %</label><input type="number" id="cash_withdrawal" min="0" max="100"></div>
+                    <div><label>Recent Spend Change %</label><input type="number" id="spend_change" min="-100" max="100"></div>
+                </div>
+            `;
+            document.getElementById('scoringForm').innerHTML = form;
+        }
+
+        async function scoreCustomer() {
+            try {
+                const customerData = {
+                    customer_id: document.getElementById('cust_id').value,
+                    'Utilisation %': parseFloat(document.getElementById('utilisation').value),
+                    'Avg Payment Ratio': parseFloat(document.getElementById('payment_ratio').value),
+                    'Min Due Paid Frequency': parseFloat(document.getElementById('due_freq').value),
+                    'Merchant Mix Index': parseFloat(document.getElementById('merchant_mix').value),
+                    'Cash Withdrawal %': parseFloat(document.getElementById('cash_withdrawal').value),
+                    'Recent Spend Change %': parseFloat(document.getElementById('spend_change').value),
+                    'signal_spend_decline': parseFloat(document.getElementById('spend_change').value) < -10 ? 1 : 0,
+                    'signal_high_utilization': parseFloat(document.getElementById('utilisation').value) > 80 ? 1 : 0,
+                    'signal_payment_decline': parseFloat(document.getElementById('payment_ratio').value) < 40 ? 1 : 0,
+                    'signal_cash_surge': parseFloat(document.getElementById('cash_withdrawal').value) > 15 ? 1 : 0,
+                    'signal_low_merchant_mix': parseFloat(document.getElementById('merchant_mix').value) < 0.4 ? 1 : 0
+                };
+
+                const response = await axios.post(`${API_BASE}/score-customer`, customerData);
+                const result = response.data;
+
+                const html = `
+                    <div style="margin-top: 30px; padding: 20px; background: var(--light); border-radius: 10px;">
+                        <h3>Assessment Results</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;">
+                            <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
+                                <div style="color: #6b7280; font-size: 12px;">RISK TIER</div>
+                                <span class="risk-tier-badge ${result.risk_tier}">${result.risk_tier}</span>
+                            </div>
+                            <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
+                                <div style="color: #6b7280; font-size: 12px;">RISK SCORE</div>
+                                <div style="font-size: 24px; font-weight: bold;">${result.risk_score}/5</div>
+                            </div>
+                            <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
+                                <div style="color: #6b7280; font-size: 12px;">DELINQUENCY PROB</div>
+                                <div style="font-size: 24px; font-weight: bold; color: var(--danger);">${(result.delinquency_probability * 100).toFixed(1)}%</div>
+                            </div>
+                        </div>
+                        ${result.triggered_signals.length > 0 ? `
+                            <div style="background: #fee2e2; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                                <strong>Triggered Signals:</strong>
+                                <ul style="margin-left: 20px; margin-top: 10px;">
+                                    ${result.triggered_signals.map(s => `<li>${s}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        <div class="recommendation">
+                            <strong>Recommended Actions:</strong>
+                            <ul>${result.recommendations.map(r => `<li>${r}</li>`).join('')}</ul>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('scoringResult').innerHTML = html;
+            } catch (error) {
+                document.getElementById('scoringResult').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        window.addEventListener('load', () => {
+            document.getElementById('timestamp').textContent = new Date().toLocaleString();
+            loadDashboard();
+        });
+    </script>
+</body>
+</html>
